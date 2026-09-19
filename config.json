@@ -1,0 +1,10 @@
+{
+    "device_id": "coldguard-pi-01",
+    "server_url": "http://127.0.0.1:18443/events",
+    "log_dir": "./logs",
+    "authorized_cards": {
+        "demo-card-A": true,
+        "demo-card-B": false,
+        "demo-card-C": false
+    }
+}

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ColdGuard Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f4f4f9; padding: 20px; color: #333; transition: background 0.5s; }
+        body.lockdown { background: #721c24; color: white; }
+        .header { margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .lockdown .card { background: #f8d7da; color: #721c24; }
+        .card-full { grid-column: 1 / -1; }
+        h2 { margin-top: 0; color: inherit; font-size: 1.2rem; }
+        .value { font-size: 28px; font-weight: bold; color: #0056b3; margin: 10px 0; }
+        .lockdown .value { color: #721c24; }
+        .timestamp { font-size: 13px; color: #777; margin-top: 10px; }
+        .simulated { display: inline-block; background: #ffc107; color: #000; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-bottom: 10px; }
+        .connection-status { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; display: inline-block; }
+        .status-ok { background: #d4edda; color: #155724; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        
+        .alert-banner { display: none; background: #dc3545; color: white; padding: 15px; border-radius: 8px; font-weight: bold; margin-bottom: 20px; text-align: center; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); animation: blink 1s infinite alternate; }
+        @keyframes blink { 0% { opacity: 1; } 100% { opacity: 0.8; } }
+
+        .terminal { background: #1e1e1e; color: #00ff00; font-family: "Courier New", Courier, monospace; padding: 15px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        .terminal p { margin: 2px 0; }
+        .log-temp { color: #4fc3f7; }
+        .log-rfid { color: #ffeb3b; }
+        .log-error { color: #f44336; }
+        .log-success { color: #4caf50; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>ColdGuard Monitoring Dashboard</h1>
+            <p>Server Status: <span id="conn-status" class="connection-status status-ok">Connected</span></p>
+            <p style="color: inherit; font-size: 14px; opacity: 0.8;">Last event received by server: <span id="last-received">Waiting for data...</span></p>
+        </div>
+    </div>
+    
+    <div id="alert-banner" class="alert-banner">
+        ⚠️ LOCKDOWN INITIATED - ABNORMAL TEMPERATURE DETECTED ⚠️
+    </div>
+
+    <div class="grid">
+        <div class="card" id="temp-card">
+            <h2>Temperature Sensor</h2>
+            <div id="temp-sim" style="display:none;" class="simulated">SIMULATED</div>
+            <div class="value" id="temp-value">-- &deg;C</div>
+            <div class="timestamp" id="temp-time">Last update: --</div>
+        </div>
+
+        <div class="card" id="rfid-card">
+            <h2>RFID Access</h2>
+            <div id="rfid-sim" style="display:none;" class="simulated">SIMULATED</div>
+            <div class="value" id="rfid-value">No recent scans</div>
+            <div id="rfid-status" style="font-weight: bold; margin-bottom: 10px;"></div>
+            <div class="timestamp" id="rfid-time">Last update: --</div>
+        </div>
+
+        <div class="card card-full">
+            <h2>Temperature History</h2>
+            <canvas id="tempChart" height="80"></canvas>
+        </div>
+
+        <div class="card card-full" style="background: #e3f2fd; border-left: 5px solid #0056b3;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2>🤖 AI Incident Analyzer (LLM)</h2>
+                    <p style="font-size: 14px; color: #555; margin-top: 5px;">Automatically reviews anomalies and generates a security summary.</p>
+                </div>
+                <button onclick="triggerAIAnalysis()" style="padding: 10px 20px; background: #0056b3; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s;" onmouseover="this.style.background='#004494'" onmouseout="this.style.background='#0056b3'">Force AI Analysis</button>
+            </div>
+            <div id="ai-output" style="margin-top: 15px; padding: 15px; background: white; border-radius: 4px; border: 1px solid #b3d4fc; font-style: italic; min-height: 60px; color: #333; line-height: 1.5;">
+                Waiting for analysis...
+            </div>
+        </div>
+
+        <div class="card card-full" style="background: #2d2d2d;">
+            <h2 style="color: #fff;">Server Terminal Events</h2>
+            <div id="terminal" class="terminal">
+                <p>Waiting for incoming events...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TEMP_THRESHOLD_HIGH = 8.0; // Celsius
+        const TEMP_THRESHOLD_LOW = 2.0; // Celsius
+
+        // Initialize Chart
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        const tempChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: [],
+                    borderColor: '#28a745',
+                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                    pointBackgroundColor: [],
+                    pointBorderColor: [],
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    x: { display: true, title: { display: true, text: 'Time' } },
+                    y: { display: true, title: { display: true, text: 'Temperature (°C)' } }
+                }
+            }
+        });
+
+        let lastEventCount = 0;
+
+        async function fetchHistory() {
+            try {
+                const response = await fetch('/api/history');
+                if (!response.ok) throw new Error('Network response was not ok');
+                const data = await response.json();
+                
+                // Connection Status OK
+                const connEl = document.getElementById('conn-status');
+                connEl.innerText = 'Connected';
+                connEl.className = 'connection-status status-ok';
+
+                if (data.events && data.events.length > 0) {
+                    processEvents(data.events);
+                }
+
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                const connEl = document.getElementById('conn-status');
+                connEl.innerText = 'Disconnected';
+                connEl.className = 'connection-status status-error';
+            }
+        }
+
+        let alertTimeout = null;
+        let lastLockdownAnalysis = 0;
+
+        async function triggerAIAnalysis() {
+            const outputEl = document.getElementById('ai-output');
+            outputEl.innerText = "Analyzing recent events... ⏳";
+            try {
+                const response = await fetch('/api/analyze');
+                const data = await response.json();
+                
+                // Typing effect
+                outputEl.innerHTML = "";
+                let i = 0;
+                const txt = data.analysis;
+                const speed = 20; 
+                function typeWriter() {
+                    if (i < txt.length) {
+                        outputEl.innerHTML += txt.charAt(i);
+                        i++;
+                        setTimeout(typeWriter, speed);
+                    }
+                }
+                typeWriter();
+
+            } catch (error) {
+                outputEl.innerText = "Error reaching AI backend.";
+            }
+        }
+
+        function processEvents(events) {
+            // Find latest timestamps
+            const lastEvent = events[events.length - 1];
+            document.getElementById('last-received').innerText = new Date(lastEvent.received_at).toLocaleString();
+
+            const temps = [];
+            const labels = [];
+            let latestTemp = null;
+            let latestRfid = null;
+            
+            // Rebuild chart arrays and latests explicitly every time
+            events.forEach(event => {
+                if (event.event_type === 'temperature') {
+                    latestTemp = event;
+                    labels.push(new Date(event.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+                    temps.push(event.data.temperature_c);
+                }
+                if (event.event_type === 'rfid_scan') latestRfid = event;
+            });
+            if (events.length !== lastEventCount) {
+                const terminal = document.getElementById('terminal');
+                // terminal.innerHTML = ''; // DO NOT CLEAR TERMINAL SO ALERTS STAY
+                
+                // Get only NEW events since last count
+                const newEvents = events.slice(lastEventCount);
+
+                newEvents.forEach(event => {
+                    // Chart data is rebuilt anyway so we ignore it here
+                    
+                    // Terminal logging
+                    const timeStr = new Date(event.received_at).toLocaleTimeString();
+                    let logClass = '';
+                    let logText = `[${timeStr}] RECEIVED | ID: ${event.event_id} | Type: ${event.event_type} | `;
+                    
+                    if (event.event_type === 'temperature') {
+                        logClass = 'log-temp';
+                        logText += `Value: ${event.data.temperature_c} °C`;
+                        if (event.data.temperature_c > TEMP_THRESHOLD_HIGH || event.data.temperature_c < TEMP_THRESHOLD_LOW) {
+                            logText += ' [ABNORMAL]';
+                            logClass = 'log-error';
+                        }
+                    } else if (event.event_type === 'rfid_scan') {
+                        logClass = 'log-rfid';
+                        logText += `Card: ${event.data.card_alias}`;
+                        
+                        // NEW: Highlight unauthorized or special cards
+                        if (event.data.card_alias === 'demo-card-C') {
+                            logText += ' [UNAUTHORIZED ACCESS ATTEMPT]';
+                            logClass = 'log-error';
+                        } else if (event.data.card_alias === 'demo-card-A') {
+                            logText += ' [ADMIN ACCESS GRANTED]';
+                            logClass = 'log-success';
+                        } else {
+                            logText += ' [ACCESS GRANTED]';
+                        }
+                    } else if (event.event_type === 'alert') {
+                        logClass = 'log-error';
+                        logText = `[${timeStr}] 🚨 ALERT | ${event.data.reason} | ${event.data.message}`;
+                    }
+
+                    terminal.innerHTML += `<p class="${logClass}"><b>${logText}</b></p>`;
+                });
+                
+                // Scroll terminal to bottom
+                terminal.scrollTop = terminal.scrollHeight;
+                lastEventCount = events.length;
+            }
+
+            // Update Chart
+            if (temps.length > 0) {
+                tempChart.data.labels = labels;
+                tempChart.data.datasets[0].data = temps;
+                
+                // Generate colors for each point
+                const pointBackgroundColors = temps.map(temp => {
+                    if (temp > TEMP_THRESHOLD_HIGH || temp < TEMP_THRESHOLD_LOW) {
+                        return '#dc3545'; // Red for abnormalities
+                    }
+                    return '#28a745'; // Green for normal
+                });
+                
+                tempChart.data.datasets[0].pointBackgroundColor = pointBackgroundColors;
+                tempChart.data.datasets[0].pointBorderColor = pointBackgroundColors;
+
+                // Change line color dynamically based on the current temp (end of graph)
+                const currentTemp = temps[temps.length - 1];
+                if (currentTemp > TEMP_THRESHOLD_HIGH || currentTemp < TEMP_THRESHOLD_LOW) {
+                    tempChart.data.datasets[0].borderColor = '#dc3545'; // Red line
+                    tempChart.data.datasets[0].backgroundColor = 'rgba(220, 53, 69, 0.2)'; // Red fill
+                } else {
+                    tempChart.data.datasets[0].borderColor = '#28a745'; // Green line
+                    tempChart.data.datasets[0].backgroundColor = 'rgba(40, 167, 69, 0.1)'; // Green fill
+                }
+                
+                tempChart.update();
+            }
+
+            // Update DOM Elements
+            if (latestTemp) {
+                const tempVal = latestTemp.data.temperature_c;
+                document.getElementById('temp-value').innerHTML = `${tempVal} &deg;C`;
+                document.getElementById('temp-time').innerText = `Device Time: ${new Date(latestTemp.timestamp).toLocaleString()}`;
+                document.getElementById('temp-sim').style.display = latestTemp.simulated ? 'inline-block' : 'none';
+
+                // Check Thresholds for Lockdown Mode
+                if (tempVal > TEMP_THRESHOLD_HIGH || tempVal < TEMP_THRESHOLD_LOW) {
+                    document.body.classList.add('lockdown');
+                    document.getElementById('alert-banner').style.display = 'block';
+                    
+                    // Trigger LLM analysis automatically if we haven't done it in the last 60 seconds
+                    const now = Date.now();
+                    if (now - lastLockdownAnalysis > 60000) {
+                        lastLockdownAnalysis = now;
+                        triggerAIAnalysis();
+                    }
+                } else {
+                    document.body.classList.remove('lockdown');
+                    document.getElementById('alert-banner').style.display = 'none';
+                }
+            }
+
+            if (latestRfid) {
+                document.getElementById('rfid-value').innerText = latestRfid.data.card_alias || 'Unknown Card';
+                document.getElementById('rfid-time').innerText = `Device Time: ${new Date(latestRfid.timestamp).toLocaleString()}`;
+                document.getElementById('rfid-sim').style.display = latestRfid.simulated ? 'inline-block' : 'none';
+                
+                const statusEl = document.getElementById('rfid-status');
+                if (latestRfid.data.card_alias === 'demo-card-C') {
+                    statusEl.innerText = 'ACCESS DENIED';
+                    statusEl.style.color = '#dc3545';
+                    document.getElementById('rfid-value').style.color = '#dc3545';
+                } else if (latestRfid.data.card_alias === 'demo-card-A') {
+                    statusEl.innerText = 'ADMIN ACCESS GRANTED';
+                    statusEl.style.color = '#28a745';
+                    document.getElementById('rfid-value').style.color = '#0056b3';
+                } else {
+                    statusEl.innerText = 'ACCESS GRANTED';
+                    statusEl.style.color = '#28a745';
+                    document.getElementById('rfid-value').style.color = '#0056b3';
+                }
+            }
+        }
+
+        // Poll for updates every 2 seconds
+        setInterval(fetchHistory, 2000);
+        // Initial fetch
+        fetchHistory();
+    </script>
+</body>
+</html>

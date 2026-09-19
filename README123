@@ -1,0 +1,503 @@
+# ColdGuard — Secure Access, Trusted Conditions
+
+**Track:** Track 3 — Security & Resilience / Operation Zero Trust  
+**Current milestone:** Stage 1 — Connectivity  
+**Duration:** Two-day hackathon  
+**Team:** Team Delta (based on the supplied handbook; confirm before submission)
+
+> **Status: planning document.** This README describes the agreed scope and proposed implementation. No hardware, network, test result, or SVN submission is confirmed by this document. Examples below are expected outputs, not collected evidence. Update the checkboxes and actual-results section as work is completed.
+
+## 1. Project overview
+
+ColdGuard is a secure cold-storage monitoring and access-control prototype. An RFID reader captures access requests, a temperature sensor monitors storage conditions, and a buzzer provides local alerts. A Raspberry Pi sends events to a Linux VM for recording and display.
+
+The security objective is to distinguish legitimate device messages from modified, forged, or replayed messages. The resilience objective is to detect missing updates and recover cleanly after a connection interruption.
+
+A camera, if available, can attach a snapshot to an access event. Face verification and an LLM incident explainer are stretch goals after the required stages work.
+
+### Problem statement
+
+A monitoring screen can show misleading information if an attacker changes temperature readings or replays an earlier approved access event. ColdGuard aims to show both the reported event and whether the server can trust the message carrying it.
+
+### Scope boundaries
+
+- An RFID UID is a prototype identifier, not proof that a card is unclonable.
+- A card scan represents an access request; it does not prove physical entry.
+- An LED represents the proposed lock state unless suitable lock hardware is obtained.
+- A camera snapshot is supporting evidence, not face verification.
+- Message authentication does not prove a sensor is physically accurate or uncompromised.
+- Temperature thresholds are configurable demonstration values, not medical or food-storage certification.
+- All tests stay within the team's assigned Pi, VM, devices, and network scope.
+
+## 2. Stage 1 goal and definition of done
+
+**Goal: scan a card and read the temperature on the Pi, then prove both events reach the Linux VM.**
+
+Required team deliverables:
+
+- [ ] Raspberry Pi boots and is connected to the assigned network.
+- [ ] Pi has a recorded, valid IP address and route to the VM.
+- [ ] RFID reader produces a local card-scan event, or a temporary simulated event is explicitly labelled.
+- [ ] Temperature sensor produces a local reading, or a temporary simulated reading is explicitly labelled.
+- [ ] Pi sends both event types to the VM.
+- [ ] VM stores or displays matching received events.
+- [ ] Buzzer can be activated locally as a hardware test.
+- [ ] Team captures screenshots, logs, code, and a short explanation.
+- [ ] Evidence is committed to the assigned SVN repository and the revision is recorded.
+
+The handbook permits simulated telemetry. Simulation is a fallback and must never be presented as a physical sensor test. Buzzer testing is our project milestone; telemetry delivery is the core Stage 1 requirement from the supplied material.
+
+Stage 1 does **not** claim device authentication, replay prevention, face recognition, or secure physical door control.
+
+## 3. Components and responsibilities
+
+- **Raspberry Pi 5:** reads inputs, runs the sender, and controls local outputs.
+- **PN532 RFID/NFC reader:** captures the card identifier for an access-request event.
+- **DHT22 temperature/humidity sensor:** supplies temperature; humidity is optional.
+- **Active buzzer:** local hardware test in Stage 1; configured alerts in later stages.
+- **LED, optional:** indicates prototype access/lock state.
+- **Linux VM:** receives, records, and displays events; later verifies messages.
+- **Team switch and assigned network:** connect the Pi to organizer-managed routing and the VM.
+- **Camera, conditional:** access-event snapshots only after basic integration works.
+- **Physical lock, conditional:** requires suitable hardware, power, driver circuitry, and safe manual release; it is not in the baseline scope.
+
+The supplied equipment list does not include a camera or physical lock. Do not make either a dependency for Stage 1. Confirm wiring and electrical requirements for the exact modules before connecting them; this README is not a wiring guide.
+
+## 4. Four-member work allocation
+
+### Member 1 — Network student: connectivity lead
+
+1. Connect the laptop to team Wi-Fi and the Pi to the provided switch.
+2. Coordinate with the hardware lead to access the Pi terminal.
+3. Configure or verify the Pi's address in the assigned IoT subnet.
+4. Check its route to the VM and test connectivity.
+5. Agree on the telemetry protocol and port with the CS student.
+6. Troubleshoot the actual Pi-to-VM connection during integration.
+7. Record actual addresses, routes, and successful application communication.
+
+**Handoff:** Pi IP, VM IP, working route, chosen service port, and network evidence.  
+**Done:** actual Pi messages reach the VM receiver. Ping alone is insufficient.
+
+### Member 2 — Mechatronics student: hardware lead
+
+1. Prepare and boot the Pi; coordinate network changes with the network lead.
+2. Test the RFID reader independently.
+3. Test the temperature sensor independently.
+4. Test the buzzer and optional status LED.
+5. Provide simple reading/output functions to the CS student.
+6. Capture wiring photos and local terminal output.
+
+**Handoff:** working card-reading, temperature-reading, and buzzer-control functions, plus wiring notes.  
+**Done:** local readings are repeatable and the buzzer can be controlled.
+
+### Member 3 — Computer science student: sender and receiver lead
+
+1. Agree on the message schema with the team.
+2. Build the receiving service on the VM.
+3. Build the Pi sender using clearly labelled sample events initially.
+4. Integrate the hardware functions once available.
+5. Persist received events and return an acknowledgement.
+6. Report receiver status and integration errors to the network lead.
+
+**Handoff:** sender/receiver source, run instructions, chosen endpoint/port, and server logs.  
+**Done:** repeated RFID and temperature events are received and stored with matching IDs.
+
+### Member 4 — AI student: event display, validation, and submission lead
+
+1. Build a minimal display of the latest temperature, RFID event, and last-received time.
+2. Use labelled sample records while waiting for the receiver.
+3. Connect the display to actual VM records.
+4. Compare sent and received event IDs and record results.
+5. Collect evidence, update this README, and coordinate SVN submission.
+6. If a camera is available and the core flow works, test an event-linked snapshot.
+
+**Handoff:** event display, test results, evidence package, and SVN revision.  
+**Done:** judges can follow the complete flow and inspect the submitted proof.
+
+No AI model is required for Stage 1. This member owns later optional vision and LLM work.
+
+## 5. Network plan
+
+The following values are transcribed from the supplied Team Delta handbook. Organizer updates take precedence.
+
+- Team Wi-Fi SSID: `Track3_Delta`
+- Laptop Wi-Fi subnet: `192.168.40.0/24` via DHCP
+- Pi / IoT subnet: `10.40.40.0/24`
+- Pi / IoT gateway: `10.40.40.1`
+- Pi address: **TBD — choose an unused address within the assigned team subnet**
+- Team VM subnet: `172.16.40.0/24`
+- Team VM address: `172.16.40.10`
+- VM gateway: `172.16.40.1`
+- Organizer-assigned VLAN: `40`
+
+The organizer manages the upstream switch/router. The VLAN number is reference information, not an instruction to configure tagging on the Pi. Keep credentials out of this README and repository evidence.
+
+### Proposed application choices — confirm during implementation
+
+- Transport for Stage 1: HTTP carrying JSON.
+- Proposed receiver: `POST http://172.16.40.10:8000/events`.
+- Proposed persistence: append-only JSON Lines log on the VM.
+- Suggested temperature interval: every five seconds.
+- RFID events: emitted on a scan, with duplicate-read suppression to avoid flooding.
+- Buzzer test: short, manually triggered local test.
+
+These are team defaults, not existing services or organizer requirements. If the team chooses MQTT or a different port, update all senders, receiver configuration, diagrams, and run instructions together. Plain HTTP in Stage 1 is connectivity scaffolding, not a claim of secure transport; assess TLS in later stages.
+
+## 6. System flows
+
+### Stage 1 telemetry flow
+
+```text
+RFID reader -----------+
+                       +--> Raspberry Pi --> Team switch
+Temperature sensor ----+         |                 |
+                                 |                 v
+                          Local buzzer test   Organizer network
+                                                   |
+                                                   v
+                                              Linux VM
+                                                   |
+                                             Receive + store
+                                                   |
+                                             Event display
+                                                   |
+                                         Screenshots/logs -> SVN
+```
+
+The VM acknowledgement proves receipt of a request. It is not an access-granted or unlock command.
+
+### Later secure access flow — planned
+
+```text
+Card scan -> Pi creates authenticated access request
+          -> VM verifies device/message and freshness
+          -> VM checks prototype card permission
+          -> Record accepted or denied decision
+          -> Authenticated, short-lived, single-use response/command
+          -> Pi verifies response before changing LED/lock state
+```
+
+Never allow an unsigned or replayed network message to activate the lock indicator or physical lock. If a physical lock is added, loss-of-power and emergency-egress behavior require an explicit design; no blanket lock-on-failure policy is assumed here.
+
+### Later temperature-alert flow — planned
+
+```text
+Temperature reading -> Authenticated message -> VM verification
+                    -> Valid reading: evaluate demo threshold
+                    -> Invalid message: reject and log reason
+                    -> Threshold exceeded: display alert
+                    -> Local alarm or verified alarm command, as designed
+```
+
+A rejected reading must not replace the last valid reading or falsely show normal conditions. Display stale/missing data separately from safe temperature.
+
+### Optional camera and LLM flow
+
+```text
+Card event -> Camera snapshot -> Link image to event ID
+
+Verified event records -> LLM -> Labelled incident explanation
+```
+
+Snapshots do not prove identity. Optional face verification needs enrollment, an explicit error policy, and consideration of photo spoofing. The LLM only explains recorded events; it cannot grant access, override verification, or control the buzzer/lock. Core operation must continue if AI services are unavailable.
+
+## 7. Proposed Stage 1 message format
+
+Example temperature event — sample only:
+
+```json
+{
+  "schema_version": 1,
+  "device_id": "coldguard-pi-01",
+  "boot_id": "demo-session-01",
+  "event_id": "demo-session-01-0001",
+  "sequence": 1,
+  "event_type": "temperature",
+  "timestamp": "2026-09-19T02:00:00Z",
+  "simulated": true,
+  "data": { "temperature_c": 6.2 }
+}
+```
+
+Example RFID event — sample only:
+
+```json
+{
+  "schema_version": 1,
+  "device_id": "coldguard-pi-01",
+  "boot_id": "demo-session-01",
+  "event_id": "demo-session-01-0002",
+  "sequence": 2,
+  "event_type": "rfid_scan",
+  "timestamp": "2026-09-19T02:00:05Z",
+  "simulated": true,
+  "data": { "card_alias": "demo-card-A" }
+}
+```
+
+Use actual UTC timestamps when implemented. The receiver also records its own `received_at` time. Use aliases in presentation evidence rather than exposing raw card identifiers. Set `simulated` accurately. Device IDs, boot IDs, timestamps, and sequence numbers are data fields, not security controls by themselves.
+
+Later authentication should bind the relevant message fields together. Replay state must account for restart behavior; accepting an arbitrary new boot ID must not reset trust automatically.
+
+## 8. Stage 1 execution plan
+
+### A. Agree on interfaces before splitting up
+
+1. Confirm the project scope and hardware actually available.
+2. Confirm Pi address, receiver port, schema, and evidence location.
+3. Assign one person to coordinate SVN commits.
+4. Agree that camera/AI work will not block basic telemetry.
+
+### B. Work in parallel
+
+- Network lead verifies the Pi-to-VM path.
+- Hardware lead tests inputs and outputs locally.
+- CS lead builds sender/receiver using sample messages.
+- AI lead prepares the display and test/evidence checklist.
+
+### C. Integrate
+
+1. Send a labelled simulated message from the Pi to the VM.
+2. Confirm its event ID and data in the VM log.
+3. Replace the simulated source with actual hardware readings.
+4. Show both event types on the display or terminal.
+5. Capture the buzzer's local test separately.
+
+### D. Verify and submit
+
+1. Run the tests below.
+2. Record actual outcomes, including failures or incomplete items.
+3. Save evidence and code.
+4. Update the run instructions and status section.
+5. Commit to SVN and record the revision before the stage deadline.
+
+## 9. Expected outputs and test checklist
+
+All output below is illustrative. Replace examples with real evidence in the repository.
+
+### Test S1-01 — Address and route
+
+**Action:** on the Pi, inspect `ip -br address`, `ip route`, and `ip route get 172.16.40.10`.
+
+**Expected:** an address in the assigned IoT subnet and a route to the VM via the team gateway. For example, only if `10.40.40.20` is the chosen unused address:
+
+```text
+172.16.40.10 via 10.40.40.1 dev eth0 src 10.40.40.20
+```
+
+**Evidence:** `S1-01-network.png` or a saved terminal log. Ping is supplementary; ICMP may be filtered.
+
+### Test S1-02 — Temperature delivery
+
+**Action:** send ten numbered temperature events from the Pi.
+
+**Expected:** ten matching event IDs and values recorded on the VM during the controlled test. Document retries, duplicates, or missing events rather than hiding them.
+
+```text
+PI: SENT event_id=demo-session-01-0001 type=temperature value=6.2 simulated=true
+VM: RECEIVED event_id=demo-session-01-0001 type=temperature value=6.2 simulated=true
+```
+
+**Evidence:** sender log, receiver log, and matching screenshot. Ten messages is a suggested team test, not an organizer requirement.
+
+### Test S1-03 — RFID delivery
+
+**Action:** scan a demonstration card.
+
+**Expected:** the Pi creates an `rfid_scan` event and the same ID/card alias appears in the VM log. No door-access security claim is made yet.
+
+```text
+VM: RECEIVED event_id=demo-session-01-0002 type=rfid_scan card_alias=demo-card-A
+```
+
+**Evidence:** reader photo and matching Pi/VM logs. If simulated, mark the test as simulation rather than a reader hardware pass.
+
+### Test S1-04 — Local buzzer
+
+**Action:** invoke the local buzzer test.
+
+**Expected:** buzzer sounds briefly and stops under program control.
+
+**Evidence:** test notes and code; a short recording may supplement the accepted evidence formats if organizers permit it. A printed “buzzer on” message alone does not prove physical sound.
+
+### Test S1-05 — Event display
+
+**Action:** open the display or inspect the receiver terminal.
+
+**Expected:** latest temperature, latest RFID event, server receipt time, and clear simulation labels where relevant. Stage 1 messages are labelled unverified if verification is not implemented.
+
+**Evidence:** screenshot linked to the corresponding log events.
+
+### Test S1-06 — SVN submission
+
+**Action:** commit the Stage 1 evidence folder and inspect repository history.
+
+**Expected:** intended files appear under the assigned team repository, with a recorded commit revision.
+
+**Evidence:** revision number and commit-history screenshot.
+
+## 10. Two-day roadmap
+
+Organizer stage deadlines take precedence over this suggested work order.
+
+### Day 1 — Complete connectivity, then trust
+
+- Agree on scope and message format immediately.
+- Finish Stage 1 hardware/network integration and submit evidence.
+- Add device-message authentication and card-permission rules.
+- Add replay detection with authenticated counters/freshness and documented restart behavior.
+- Protect any server-to-Pi control messages.
+- Submit Stage 2 proof of accepted valid messages and rejected invalid messages.
+
+### Day 2 — Attack demonstration, resilience, and presentation
+
+- Demonstrate at least one controlled attack as required by the handbook.
+- Target replay rejection and altered-message rejection if time allows.
+- Disconnect/reconnect the Pi and record missing-update detection and recovery.
+- Explain architecture, credential handling, limitations, and production improvements.
+- Add camera snapshots or the LLM explanation only after the required demonstration is stable.
+- Rehearse the demonstration and verify all stage submissions.
+
+### Priority order
+
+1. Pi-to-VM telemetry and submitted evidence.
+2. Message authentication and replay rejection.
+3. Clear attack demonstration and recovery behavior.
+4. Simple, readable event display.
+5. Camera snapshots.
+6. LLM incident explanation.
+7. Face verification or physical lock integration only if feasible with remaining time.
+
+## 11. Planned later-stage acceptance criteria
+
+### Stage 2 — Trust
+
+- A legitimate authenticated message is accepted.
+- An altered message fails verification.
+- An unknown/untrusted device cannot submit trusted telemetry.
+- Replayed messages are rejected according to the documented policy.
+- A card permission decision is separate from device-message verification.
+- Access commands, if implemented, are authenticated and freshness-checked on the Pi.
+
+### Stage 3 — Attack and defense
+
+- Capture attack input, receiver decision, rejection reason, and resulting system state.
+- Show that rejected access messages do not trigger an access-granted indication.
+- Show that rejected temperature messages do not overwrite trusted readings.
+- Record an interrupted connection and subsequent recovery if implemented.
+
+### Stage 4 — Production readiness
+
+- Explain device enrollment, secret storage/rotation, transport protection, and least-privilege access.
+- Explain stale-data handling, service restart, logs, monitoring, and scaling.
+- Document camera-image retention/consent if images are captured.
+- Identify prototype limitations and distinguish implemented functions from future work.
+- Explain safe physical operation and emergency release if real lock hardware is used.
+
+## 12. Repository and evidence layout
+
+Suggested structure; create only folders/files actually needed:
+
+```text
+README.md
+src/
+  pi/                       # Sender and hardware functions
+  server/                   # Receiver, verification, persistence
+  dashboard/                # Optional event display
+config/
+  example-config.json       # Placeholders only; no secrets
+docs/
+  architecture.md
+  wiring.md
+  runbook.md
+evidence/
+  stage1-connectivity/
+    network/
+    hardware/
+    sender/
+    receiver/
+    display/
+    test-results.md
+    submission.txt
+  stage2-trust/
+  stage3-attack-defense/
+  stage4-production-readiness/
+```
+
+Keep screenshots legible and give each evidence item a test ID. Capture relevant terminal context, timestamps, and matching event IDs. Remove passwords, private keys, API keys, and unnecessary card identifiers.
+
+## 13. SVN submission workflow
+
+1. Use the organizer-provided repository URL and credentials. Do not guess the team repository path.
+2. Check out the repository using the provided SVN guide.
+3. Update the working copy before integrating changes.
+4. Copy in the code, README, and evidence for the current stage.
+5. Mark new files for addition and review the changed-file list.
+6. Commit with a descriptive message, such as `Stage 1: Pi-to-VM RFID and temperature connectivity evidence`.
+7. Inspect repository history and record the resulting revision in `submission.txt`.
+
+Suggested submission record:
+
+```text
+Stage: 1 — Connectivity
+Submitted by: <name>
+Submission time and timezone: <actual time>
+SVN revision: <actual revision>
+Tests passed: <actual test IDs>
+Simulated inputs: <list or none>
+Known incomplete items: <list or none>
+```
+
+Use one submission coordinator to reduce last-minute conflicts. A local saved folder is not proof that an SVN commit succeeded.
+
+## 14. Run instructions — fill in after implementation
+
+This README is a plan, not an accompanying software implementation. Do not present placeholder commands as tested setup instructions.
+
+- Pi OS/version: **TBD**
+- VM OS/version: **TBD**
+- Actual Pi IP: **TBD**
+- Chosen protocol and port: **TBD**
+- Dependencies and installation commands: **TBD by CS/hardware leads**
+- Receiver start command: **TBD**
+- Sender start command: **TBD**
+- Display start command/address: **TBD**
+- Log location: **TBD**
+- Hardware pin assignments and module mode: **TBD by hardware lead**
+- Demo temperature threshold: **TBD; label as demonstration setting**
+
+## 15. Actual results and current status
+
+Update this section before each submission.
+
+- S1-01 Network address/route: **Not tested**
+- S1-02 Temperature delivery: **Not tested**
+- S1-03 RFID delivery: **Not tested**
+- S1-04 Buzzer: **Not tested**
+- S1-05 Event display: **Not tested**
+- S1-06 SVN submission: **Not submitted**
+- Camera availability: **Unconfirmed**
+- Physical lock availability: **Unconfirmed**
+- Authentication/replay protection: **Planned**
+- LLM incident explanation: **Optional, not implemented**
+- Known issues/blockers: **Record here**
+- Latest SVN revision: **Record here**
+
+## 16. Stage 1 demonstration script
+
+1. Introduce ColdGuard as a secure cold-storage monitoring prototype.
+2. Show the Pi and its assigned network configuration.
+3. Scan a card and show the matching event on the VM.
+4. Show a temperature event and its matching server record.
+5. Demonstrate the local buzzer test.
+6. Identify any simulated inputs honestly.
+7. Show the evidence folder and SVN revision.
+8. Explain that the next milestone is message authentication and replay rejection.
+
+**Stage 1 success statement, to use only after verification:**
+
+“Our Raspberry Pi sends RFID and temperature events to our Linux VM. We have matched the sent and received records, tested the local buzzer, and committed the evidence to SVN. Message-trust controls are the next milestone.”
+
+## 17. Basis of this plan
+
+Organizer requirements and network details were taken from the supplied Track 3 mission sheet, Team Delta quick-start guide, equipment checklist, submission/evidence slide, and SVN guide. The ColdGuard concept, team allocation, proposed HTTP schema, ten-message test, optional AI features, and work order are team planning choices rather than organizer requirements.

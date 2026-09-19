@@ -1,0 +1,9 @@
+{
+  "server_url": "http://172.16.40.10:18443/events",
+  "device_id": "coldguard-pi-01",
+  "log_dir": "/var/lib/coldguard",
+  "authorized_cards": {
+    "demo-card-A": true,
+    "demo-card-B": false
+  }
+}
