@@ -1,20 +1,14 @@
-# ColdGuard Stage 2 - Trust Package
+# ColdGuard Stage 2 - Advanced Trust Package
 
-## 1. Setup the Secret Key (Required on BOTH Pi and VM)
-Both programs explicitly load the cryptographic secret from a restricted file. Create it before running the application:
-
-```bash
-mkdir -p ~/.config/coldguard
-echo "hackathon-super-secret-key-2026" > ~/.config/coldguard/device.key
-chmod 600 ~/.config/coldguard/device.key
-```
+## 1. Setup the Secret Keys
+The system requires two secrets. We already have matching keys generated in `~/.config/coldguard/device.key` and `~/.config/coldguard/rfid.key`. There is no need to generate new ones.
 
 ## 2. Configuration & State Management
-Copy the example configuration to create your active settings:
+Copy the configuration template:
 ```bash
 cp config.example.json config.json
 ```
-**Important:** Ensure the `log_dir` path specified in `config.json` exists (e.g., `/var/lib/coldguard` or `~/coldguard_state`). The sender and receiver will write their persistent sequence counters and event logs to this directory.
+The state directory (`~/.local/state/coldguard`) will be automatically created. Sequence counters and logs are stored here permanently.
 
 ## 3. Install Dependencies
 ```bash
@@ -26,13 +20,18 @@ pip install -r requirements.txt
 ```bash
 python3 receiver.py
 ```
-**Start the Pi Sender:**
+**Start the Pi Sender (Coordinate with Mechatronics):**
 ```bash
 python3 sender.py
 ```
+*(The sender script is designed to safely recover sequence state. If it crashes, restarting it will resume exactly where it left off, successfully fulfilling the resilience requirement.)*
 
 ## 5. Proving Security Controls
-Run the test script to prove modified and replayed messages are rejected:
+Run the comprehensive test script to prove modified, stale, and replayed messages are rejected:
 ```bash
 python3 test_security.py
 ```
+
+## 6. Implementation Notes & Limitations
+* **What is Not Implemented Yet:** This package does not yet provide the stale-data dashboard, RFID behavior alerts, offline queue, or automatic recovery. 
+* **Timestamps:** The current timestamp allowance is 60 seconds, rather than the proposed 15-second live-age limit and 5-second future allowance.

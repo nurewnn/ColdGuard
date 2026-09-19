@@ -3,6 +3,7 @@ import json
 import datetime
 import os
 import requests
+import threading
 from dotenv import load_dotenv
 from security import load_secret, verify_signature
 
@@ -19,13 +20,17 @@ except FileNotFoundError:
 
 LOG_DIR = config.get('log_dir', '/var/lib/coldguard')
 AUTHORIZED_CARDS = config.get('authorized_cards', {})
-SECRET_KEY = load_secret()
+EXPECTED_DEVICE_ID = config.get('device_id')
+SECRET_KEY = load_secret('~/.config/coldguard/device.key')
 
 TRUSTED_LOG = os.path.join(LOG_DIR, "events.jsonl")
 REJECTED_LOG = os.path.join(LOG_DIR, "security_alerts.jsonl")
 SEQ_FILE = os.path.join(LOG_DIR, "vm_sequence.txt")
 
 os.makedirs(LOG_DIR, exist_ok=True)
+
+# Lock for sequence file reading/writing
+seq_lock = threading.Lock()
 
 def get_last_sequence():
     if os.path.exists(SEQ_FILE):
@@ -142,15 +147,44 @@ def receive_event():
         log_event(REJECTED_LOG, {"raw_payload": raw_data.decode('utf-8', errors='ignore')}, "REJECTED | BAD_AUTHENTICATION")
         return jsonify({"error": "Forbidden"}), 403
         
-    data = json.loads(raw_data)
-    in_seq = data.get('sequence', 0)
+    try:
+        data = json.loads(raw_data)
+    except json.JSONDecodeError:
+        return jsonify({"error": "Malformed JSON"}), 400
+        
+    # Input validation
+    if not all(k in data for k in ('device_id', 'sequence', 'timestamp', 'event_type', 'data')):
+        return jsonify({"error": "Missing required fields"}), 400
+        
+    if data.get('device_id') != EXPECTED_DEVICE_ID:
+        log_event(REJECTED_LOG, data, f"REJECTED | UNKNOWN_DEVICE ({data.get('device_id')})")
+        return jsonify({"error": "Unknown device"}), 403
+        
+    if not isinstance(data.get('sequence'), int):
+        return jsonify({"error": "Invalid sequence format"}), 400
+        
+    # Timestamp Freshness Check
+    time_str = data.get('timestamp', '').replace('Z', '+00:00')
+    try:
+        event_time = datetime.datetime.fromisoformat(time_str)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        # Allow up to 60 seconds old, or up to 5 seconds into the future
+        diff = (now - event_time).total_seconds()
+        if diff > 60 or diff < -5:
+            log_event(REJECTED_LOG, data, f"REJECTED | STALE_OR_FUTURE_TIMESTAMP (diff: {diff:.1f}s)")
+            return jsonify({"error": "Stale timestamp"}), 403
+    except ValueError:
+        return jsonify({"error": "Invalid timestamp format"}), 400
+
+    in_seq = data.get('sequence')
     
-    last_seq = get_last_sequence()
-    if in_seq <= last_seq:
-        log_event(REJECTED_LOG, data, f"REJECTED | REPLAY ATTACK (Seq {in_seq} <= {last_seq})")
-        return jsonify({"error": "Replay detected"}), 403
-    
-    save_sequence(in_seq)
+    with seq_lock:
+        last_seq = get_last_sequence()
+        if in_seq <= last_seq:
+            log_event(REJECTED_LOG, data, f"REJECTED | REPLAY ATTACK (Seq {in_seq} <= {last_seq})")
+            return jsonify({"error": "Replay detected"}), 403
+        
+        save_sequence(in_seq)
     
     if data.get('event_type') == 'rfid_scan':
         card = data.get('data', {}).get('card_alias')

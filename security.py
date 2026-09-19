@@ -2,15 +2,19 @@ import hmac
 import hashlib
 import os
 
-SECRET_FILE = os.path.expanduser('~/.config/coldguard/device.key')
-
-def load_secret():
+def load_secret(path):
+    expanded_path = os.path.expanduser(path)
     try:
-        with open(SECRET_FILE, 'r') as f:
-            return f.read().strip().encode('utf-8')
+        with open(expanded_path, 'r') as f:
+            secret_str = f.read().strip()
+            try:
+                # Attempt to decode as hex per documented format
+                return bytes.fromhex(secret_str)
+            except ValueError:
+                # Fallback to direct UTF-8 encoding for older/legacy keys
+                return secret_str.encode('utf-8')
     except FileNotFoundError:
-        print(f"CRITICAL: Secret key file not found at {SECRET_FILE}")
-        print("Create it using: mkdir -p ~/.config/coldguard && echo 'your-secret' > ~/.config/coldguard/device.key")
+        print(f"CRITICAL: Secret key file not found at {expanded_path}")
         exit(1)
 
 def generate_signature(secret_key, payload_bytes):

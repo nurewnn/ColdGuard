@@ -8,12 +8,14 @@ from security import load_secret, generate_signature
 
 try:
     import hardware
+    IS_SIMULATED = False
 except ImportError:
     class hardware:
         @staticmethod
         def read_temperature(): return 6.2
         @staticmethod
         def read_rfid(): return "RAW-UID-A1B2C3D4" # Simulated raw read
+    IS_SIMULATED = True
 
 try:
     with open('config.json', 'r') as f:
@@ -54,7 +56,7 @@ def send_event(event_type, payload):
         "sequence": get_next_sequence(),
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'),
         "event_type": event_type,
-        "simulated": False,
+        "simulated": IS_SIMULATED,
         "data": payload
     }
     
@@ -70,12 +72,27 @@ def send_event(event_type, payload):
 
 if __name__ == '__main__':
     print(f"Starting Secure ColdGuard Sender to {SERVER_URL}...")
+    if IS_SIMULATED:
+        print("WARNING: hardware.py not found. Running in SIMULATION MODE.")
+        
+    import sys
+    test_mode = len(sys.argv) > 1 and sys.argv[1] == '--test-denial'
+    test_frozen = len(sys.argv) > 1 and sys.argv[1] == '--test-frozen'
+
     while True:
-        temp = hardware.read_temperature()
+        if test_frozen:
+            temp = 6.2
+        else:
+            temp = hardware.read_temperature()
+            
         if temp is not None:
             send_event("temperature", {"temperature_c": temp})
         
-        raw_card = hardware.read_rfid()
+        if test_mode:
+            raw_card = "RAW-UID-DENIED"
+        else:
+            raw_card = hardware.read_rfid()
+            
         if raw_card is not None:
             tokenized_card = tokenize_rfid(raw_card)
             send_event("rfid_scan", {"card_alias": tokenized_card})
