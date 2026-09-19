@@ -5,14 +5,18 @@ import os
 import requests
 import threading
 from dotenv import load_dotenv
-from security import load_secret, verify_signature
 
-load_dotenv()
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared.security import load_secret, verify_signature
+
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 app = Flask(__name__)
 
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
 try:
-    with open('config.json', 'r') as f:
+    with open(CONFIG_PATH, 'r') as f:
         config = json.load(f)
 except FileNotFoundError:
     print("CRITICAL: config.json not found! Copy config.example.json to config.json and edit it.")
@@ -50,7 +54,7 @@ def log_event(file_path, data, log_message):
 
 @app.route('/')
 def index():
-    return send_file('dashboard2.html')
+    return send_file(os.path.join(os.path.dirname(__file__), 'dashboard2.html'))
 
 def read_logs():
     events = []

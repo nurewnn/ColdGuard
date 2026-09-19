@@ -2,10 +2,14 @@ import requests
 import json
 import datetime
 import os
-from security import load_secret, generate_signature
 
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared.security import load_secret, generate_signature
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
 try:
-    with open('config.json', 'r') as f:
+    with open(CONFIG_PATH, 'r') as f:
         config = json.load(f)
 except FileNotFoundError:
     print("CRITICAL: config.json not found! Copy config.example.json to config.json.")

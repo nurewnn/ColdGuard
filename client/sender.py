@@ -4,7 +4,10 @@ import uuid
 import json
 import os
 import datetime
-from security import load_secret, generate_signature
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from shared.security import load_secret, generate_signature
 
 try:
     import hardware
@@ -17,8 +20,9 @@ except ImportError:
         def read_rfid(): return "RAW-UID-A1B2C3D4" # Simulated raw read
     IS_SIMULATED = True
 
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config.json')
 try:
-    with open('config.json', 'r') as f:
+    with open(CONFIG_PATH, 'r') as f:
         config = json.load(f)
 except FileNotFoundError:
     print("CRITICAL: config.json not found! Copy config.example.json to config.json.")
