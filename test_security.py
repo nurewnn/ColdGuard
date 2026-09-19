@@ -15,7 +15,7 @@ SERVER_URL = config.get('server_url')
 SECRET_KEY = load_secret('~/.config/coldguard/device.key')
 
 LOG_DIR = os.path.expanduser(config.get('log_dir', '~/.local/state/coldguard'))
-SEQ_FILE = os.path.join(LOG_DIR, "test_pi_sequence.txt")
+SEQ_FILE = os.path.join(LOG_DIR, "pi_sequence.txt")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 def get_next_sequence():
