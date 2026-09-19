@@ -23,6 +23,9 @@
         .status-error { background: #f8d7da; color: #721c24; }
         
         .alert-banner { display: none; background: #dc3545; color: white; padding: 15px; border-radius: 8px; font-weight: bold; margin-bottom: 20px; text-align: center; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); animation: blink 1s infinite alternate; }
+        .alert-banner.offline { background: #6c757d; }
+        .alert-banner.frozen { background: #17a2b8; }
+        .alert-banner.rfid { background: #fd7e14; }
         @keyframes blink { 0% { opacity: 1; } 100% { opacity: 0.8; } }
 
         .terminal { background: #1e1e1e; color: #00ff00; font-family: "Courier New", Courier, monospace; padding: 15px; border-radius: 8px; height: 250px; overflow-y: auto; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
@@ -233,6 +236,24 @@
                     } else if (event.event_type === 'alert') {
                         logClass = 'log-error';
                         logText = `[${timeStr}] 🚨 ALERT | ${event.data.reason} | ${event.data.message}`;
+                        
+                        // Show banner for specific alerts
+                        const banner = document.getElementById('alert-banner');
+                        if (event.data.reason === 'REPEATED_DENIAL') {
+                            banner.innerText = `🚨 SECURITY ALERT - REPEATED DENIAL DETECTED FOR ${event.data.message.split(' ')[1]} 🚨`;
+                            banner.className = 'alert-banner rfid';
+                            banner.style.display = 'block';
+                            setTimeout(() => { 
+                                if(banner.className.includes('rfid')) { banner.style.display = 'none'; }
+                            }, 5000); // Hide after 5 seconds
+                        } else if (event.data.reason === 'FROZEN_SENSOR') {
+                            banner.innerText = `❄️ HARDWARE FAULT - SENSOR APPEARS FROZEN ❄️`;
+                            banner.className = 'alert-banner frozen';
+                            banner.style.display = 'block';
+                            setTimeout(() => { 
+                                if(banner.className.includes('frozen')) { banner.style.display = 'none'; }
+                            }, 5000);
+                        }
                     }
 
                     terminal.innerHTML += `<p class="${logClass}"><b>${logText}</b></p>`;
@@ -314,6 +335,32 @@
                     statusEl.innerText = 'ACCESS GRANTED';
                     statusEl.style.color = '#28a745';
                     document.getElementById('rfid-value').style.color = '#0056b3';
+                }
+            }
+
+            // Check for Offline / Missing Updates
+            if (lastEvent) {
+                const now = Date.now();
+                const lastEventTime = new Date(lastEvent.received_at).getTime();
+                const diffSeconds = (now - lastEventTime) / 1000;
+                
+                if (diffSeconds > 15) {
+                    document.getElementById('conn-status').innerText = 'OFFLINE - Missing Updates';
+                    document.getElementById('conn-status').className = 'connection-status status-error';
+                    
+                    const banner = document.getElementById('alert-banner');
+                    if (banner.style.display !== 'block') {
+                        banner.innerText = '⚠️ OFFLINE - NO FRESH READINGS RECEIVED IN 15 SECONDS ⚠️';
+                        banner.className = 'alert-banner offline';
+                        banner.style.display = 'block';
+                    }
+                } else if (document.getElementById('alert-banner').classList.contains('offline')) {
+                    // Recover from offline
+                    document.getElementById('alert-banner').style.display = 'none';
+                    document.getElementById('alert-banner').className = 'alert-banner';
+                    document.getElementById('alert-banner').innerText = '⚠️ LOCKDOWN INITIATED - ABNORMAL TEMPERATURE DETECTED ⚠️';
+                    document.getElementById('conn-status').innerText = 'Connected';
+                    document.getElementById('conn-status').className = 'connection-status status-ok';
                 }
             }
         }
