@@ -36,6 +36,11 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # Lock for sequence file reading/writing
 seq_lock = threading.Lock()
 
+# In-memory state for anomaly detection
+recent_temperatures = []
+recent_rfid_denials = []
+recent_rfid_scans = []
+
 def get_last_sequence():
     if os.path.exists(SEQ_FILE):
         with open(SEQ_FILE, 'r') as f:
@@ -73,15 +78,18 @@ def read_logs():
                 if line.strip():
                     try:
                         data = json.loads(line)
-                        events.append({
-                            "event_type": "alert",
-                            "received_at": data.get("received_at", datetime.datetime.utcnow().isoformat() + "Z"),
-                            "event_id": data.get("event_id", "SECURITY_ALERT"),
-                            "data": {
-                                "reason": "Tamper/Replay Detected",
-                                "message": "A malicious payload was blocked."
-                            }
-                        })
+                        if data.get("event_type") == "alert":
+                            events.append(data)
+                        else:
+                            events.append({
+                                "event_type": "alert",
+                                "received_at": data.get("received_at", datetime.datetime.utcnow().isoformat() + "Z"),
+                                "event_id": data.get("event_id", "SECURITY_ALERT"),
+                                "data": {
+                                    "reason": "Tamper/Replay Detected",
+                                    "message": "A malicious payload was blocked."
+                                }
+                            })
                     except json.JSONDecodeError:
                         pass
     
@@ -190,16 +198,57 @@ def receive_event():
         
         save_sequence(in_seq)
     
+    global recent_temperatures, recent_rfid_denials, recent_rfid_scans
+    
     if data.get('event_type') == 'rfid_scan':
         card = data.get('data', {}).get('card_alias')
+        now_ts = datetime.datetime.now().timestamp()
+        
+        # Check for unusually frequent presentations (ignore if same card held still within 2 seconds)
+        if recent_rfid_scans and (now_ts - recent_rfid_scans[-1]['ts'] < 2) and recent_rfid_scans[-1]['card'] == card:
+            # Skip logging this entirely as it's a held card
+            return jsonify({"status": "ignored_frequent"}), 200
+            
+        recent_rfid_scans.append({'ts': now_ts, 'card': card})
+        # Keep list small
+        if len(recent_rfid_scans) > 50: recent_rfid_scans.pop(0)
+
         if AUTHORIZED_CARDS.get(card) is True:
             data['access_granted'] = True
             log_event(TRUSTED_LOG, data, f"VERIFIED | Seq: {in_seq} | Card: {card} | PERMISSION: GRANTED")
         else:
             data['access_granted'] = False
             log_event(TRUSTED_LOG, data, f"VERIFIED | Seq: {in_seq} | Card: {card} | PERMISSION: DENIED")
+            
+            # Anomaly: Repeated denials
+            recent_rfid_denials.append(now_ts)
+            recent_rfid_denials = [ts for ts in recent_rfid_denials if now_ts - ts <= 30]
+            if len(recent_rfid_denials) >= 3:
+                alert = {
+                    "event_type": "alert",
+                    "device_id": data.get("device_id"),
+                    "data": {"reason": "REPEATED_DENIAL", "message": f"Repeated denials for {card}"}
+                }
+                log_event(REJECTED_LOG, alert, f"ALERT | REPEATED_DENIAL for {card}")
+                recent_rfid_denials.clear() # Reset after alert
+
     else:
-        log_event(TRUSTED_LOG, data, f"VERIFIED | Seq: {in_seq} | Temp: {data.get('data', {}).get('temperature_c')}C")
+        temp = data.get('data', {}).get('temperature_c')
+        log_event(TRUSTED_LOG, data, f"VERIFIED | Seq: {in_seq} | Temp: {temp}C")
+        
+        # Anomaly: Frozen sensor (10 identical readings)
+        if temp is not None:
+            recent_temperatures.append(temp)
+            if len(recent_temperatures) > 10:
+                recent_temperatures.pop(0)
+            if len(recent_temperatures) == 10 and len(set(recent_temperatures)) == 1:
+                alert = {
+                    "event_type": "alert",
+                    "device_id": data.get("device_id"),
+                    "data": {"reason": "FROZEN_SENSOR", "message": f"Sensor frozen at {temp}C"}
+                }
+                log_event(REJECTED_LOG, alert, f"ALERT | FROZEN_SENSOR at {temp}C")
+                recent_temperatures.clear() # Reset after alert
 
     return jsonify({"status": "acknowledged"}), 201
 
